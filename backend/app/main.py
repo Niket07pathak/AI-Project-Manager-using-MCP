@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -8,7 +8,7 @@ from backend.app.database import engine, get_db, Base
 from backend.app.services.llm_provider import llm_provider
 
 from backend.app.services.embedding_provider import embedding_provider
-
+from backend.app.services.storage_provider import storage_provider
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -251,3 +251,37 @@ def test_embed():
         "dimension": len(embedding),
         "sample": embedding[:5],  # Show first 5 dimensions as a sample
     }
+
+@app.post("/projects/{project_id}/documents/upload", response_model=schemas.DocumentResponse)
+async def upload_project_document(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    file_bytes = await file.read()
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename is missing")
+
+    storage_path = storage_provider.upload_file(
+        project_id=project_id,
+        filename=file.filename,
+        file_bytes=file_bytes,
+        content_type=file.content_type,
+    )
+
+    document_data = schemas.DocumentCreate(
+        project_id=project_id,
+        filename=file.filename,
+        filetype=file.content_type,
+        storage_path=storage_path,
+    )
+
+    document = crud.create_document(db=db, document=document_data)
+
+    return document
