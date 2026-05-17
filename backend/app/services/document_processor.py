@@ -59,3 +59,5 @@ class DocumentProcessor:
             chunks.append(current_chunk.strip())
 
         return chunks
+    
+document_processor = DocumentProcessor()

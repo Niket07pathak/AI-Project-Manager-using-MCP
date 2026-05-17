@@ -44,5 +44,8 @@ class StorageProvider:
 
         return storage_path
 
-
+    def download_file(self, storage_path: str) -> bytes:
+        response = self.client.storage.from_(self.bucket).download(storage_path)
+        return response
+    
 storage_provider = StorageProvider()

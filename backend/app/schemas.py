@@ -122,3 +122,7 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ProjectSearchRequest(BaseModel):
+    query: str
+    top_k: int = 5

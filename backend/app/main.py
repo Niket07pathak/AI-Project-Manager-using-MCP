@@ -9,6 +9,9 @@ from backend.app.services.llm_provider import llm_provider
 
 from backend.app.services.embedding_provider import embedding_provider
 from backend.app.services.storage_provider import storage_provider
+from backend.app.services.document_processor import document_processor
+from backend.app.services.qdrant_provider import qdrant_provider
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -252,7 +255,10 @@ def test_embed():
         "sample": embedding[:5],  # Show first 5 dimensions as a sample
     }
 
-@app.post("/projects/{project_id}/documents/upload", response_model=schemas.DocumentResponse)
+
+@app.post(
+    "/projects/{project_id}/documents/upload", response_model=schemas.DocumentResponse
+)
 async def upload_project_document(
     project_id: int,
     file: UploadFile = File(...),
@@ -285,3 +291,107 @@ async def upload_project_document(
     document = crud.create_document(db=db, document=document_data)
 
     return document
+
+
+@app.post("/documents/{document_id}/process")
+def process_document(document_id: int, db: Session = Depends(get_db)):
+    document = crud.get_document_by_id(db=db, document_id=document_id)
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if not document.storage_path:
+        raise HTTPException(status_code=400, detail="Document has no storage path")
+
+    file_bytes = storage_provider.download_file(document.storage_path)
+
+    text = document_processor.extract_text(
+        filename=document.filename,
+        file_bytes=file_bytes,
+    )
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="No text could be extracted")
+
+    chunks = document_processor.chunk_text(text)
+
+    saved_chunks = []
+
+    for index, chunk in enumerate(chunks):
+        embedding = embedding_provider.embed(chunk)
+
+        chunk_data = schemas.DocumentChunkCreate(
+            document_id=document.id,
+            project_id=document.project_id,
+            chunk_index=index,
+            content=chunk,
+            qdrant_point_id=None,
+            token_count=len(chunk.split()),
+        )
+
+        saved_chunk = crud.create_document_chunk(
+            db=db,
+            document_chunk=chunk_data,
+        )
+
+        qdrant_point_id = qdrant_provider.upsert_chunk(
+            embedding=embedding,
+            project_id=document.project_id,
+            document_id=document.id,
+            chunk_id=saved_chunk.id,
+            chunk_index=index,
+            content=chunk,
+        )
+
+        saved_chunk.qdrant_point_id = qdrant_point_id
+        db.commit()
+        db.refresh(saved_chunk)
+
+        saved_chunks.append(saved_chunk)
+    crud.update_document_status(
+        db=db,
+        document_id=document.id,
+        status="processed",
+    )
+
+    return {
+        "document_id": document.id,
+        "project_id": document.project_id,
+        "chunks_created": len(saved_chunks),
+        "status": "processed",
+    }
+
+
+@app.post("/projects/{project_id}/search")
+def search_project_documents(
+    project_id: int,
+    payload: schemas.ProjectSearchRequest,
+    db: Session = Depends(get_db),
+):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    query_embedding = embedding_provider.embed(payload.query)
+
+    results = qdrant_provider.search_chunks(
+        query_embedding=query_embedding,
+        project_id=project_id,
+        top_k=payload.top_k,
+    )
+
+    return {
+        "project_id": project_id,
+        "query": payload.query,
+        "results": [
+            {
+                "score": result.score,
+                "chunk_id": result.payload.get("chunk_id"),
+                "document_id": result.payload.get("document_id"),
+                "chunk_index": result.payload.get("chunk_index"),
+                "content": result.payload.get("content"),
+            }
+            for result in results
+        ],
+    }
