@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from backend.app import models, schemas, crud
 from backend.app.database import engine, get_db, Base
 
+from backend.app.services.llm_provider import llm_provider
+
+from backend.app.services.embedding_provider import embedding_provider
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -191,7 +195,7 @@ def list_project_chunks(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    return crud.get_document_chunks_by_project_id(db=db, project_id=project_id)
+    return crud.get_chunks_by_project(db=db, project_id=project_id)
 
 
 @app.get(
@@ -203,7 +207,7 @@ def list_document_chunks(document_id: int, db: Session = Depends(get_db)):
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    return crud.get_document_chunks_by_document_id(db=db, document_id=document_id)
+    return crud.get_chunks_by_document(db=db, document_id=document_id)
 
 
 @app.post("/audit-logs")
@@ -220,3 +224,30 @@ def list_project_audit_logs(project_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
 
     return crud.get_audit_logs_by_project(db=db, project_id=project_id)
+
+
+@app.post("/ai/test-generate")
+def test_generate():
+    response = llm_provider.generate("Reply with only: Hello from Ollama.")
+    return {
+        "provider": llm_provider.provider,
+        "model": llm_provider.model,
+        "response": response,
+    }
+
+
+@app.get("/ai/embedding-health")
+def embedding_health():
+    return embedding_provider.health()
+
+
+@app.post("/ai/test-embed")
+def test_embed():
+    text = "This is a test document for embedding."
+    embedding = embedding_provider.embed(text)
+    return {
+        "provider": embedding_provider.provider,
+        "model": embedding_provider.model,
+        "dimension": len(embedding),
+        "sample": embedding[:5],  # Show first 5 dimensions as a sample
+    }

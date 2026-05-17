@@ -18,7 +18,7 @@ def get_project_by_id(db: Session, project_id: int):
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
 
-def update_project_staus(db: Session, project_id: int, status: str):
+def update_project_status(db: Session, project_id: int, status: str):
     de_project = get_project_by_id(db, project_id)
     if not de_project:
         return None
