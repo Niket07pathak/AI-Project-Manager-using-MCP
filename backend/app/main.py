@@ -11,6 +11,12 @@ from backend.app.services.embedding_provider import embedding_provider
 from backend.app.services.storage_provider import storage_provider
 from backend.app.services.document_processor import document_processor
 from backend.app.services.qdrant_provider import qdrant_provider
+from backend.app.agents.project_analyzer import analyze_project_with_langgraph
+import json
+from backend.app.services.mcp_github_client import mcp_github_client
+from backend.app.services.mcp_task_client import mcp_task_client
+
+from backend.app.services.mcp_notification_client import mcp_notification_client
 
 Base.metadata.create_all(bind=engine)
 
@@ -394,4 +400,326 @@ def search_project_documents(
             }
             for result in results
         ],
+    }
+
+
+# @app.post(
+#     "/projects/{project_id}/analyze", response_model=schemas.ProjectAnalyzeResponse
+# )
+# def analyze_project_endpoint(project_id: int, db: Session = Depends(get_db)):
+#     project = crud.get_project_by_id(db=db, project_id=project_id)
+
+#     if not project:
+#         raise HTTPException(status_code=404, detail="Project not found")
+
+#     result = analyze_project(project_id=project_id)
+
+#     created_tasks = []
+
+#     for task in result["tasks"]:
+#         task_data = schemas.TaskCreate(
+#             project_id=project_id,
+#             title=task.get("title"),
+#             description=task.get("description"),
+#             priority=task.get("priority", "medium"),
+#             status="pending_approval",
+#             approved=False,
+#         )
+
+#         created_task = crud.create_task(db=db, task=task_data)
+#         created_tasks.append(created_task)
+
+#     return {
+#         "project_id": project_id,
+#         "chunks_used": result["chunks_used"],
+#         "tasks_created": len(created_tasks),
+#     }
+
+
+@app.post(
+    "/projects/{project_id}/analyze", response_model=schemas.ProjectAnalyzeResponse
+)
+def analyze_project_endpoint(project_id: int, db: Session = Depends(get_db)):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    result = analyze_project_with_langgraph(project_id=project_id, db=db)
+
+    return {
+        "project_id": result["project_id"],
+        "chunks_used": result["chunks_used"],
+        "tasks_created": result["tasks_created"],
+    }
+
+
+@app.patch("/tasks/{task_id}/edit", response_model=schemas.TaskResponse)
+def edit_task(
+    task_id: int,
+    payload: schemas.TaskEditUpdate,
+    db: Session = Depends(get_db),
+):
+    task = crud.edit_task(db=db, task_id=task_id, payload=payload)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    audit_data = schemas.AuditLogCreate(
+        project_id=task.project_id,
+        action="task_edited",
+        tool_name="task_approval_system",
+        input_data=payload.model_dump_json(),
+        output_data=f"task_id={task.id}",
+        status="success",
+    )
+    crud.create_audit_log(db=db, audit_log=audit_data)
+
+    return task
+
+
+@app.patch("/tasks/{task_id}/approve", response_model=schemas.TaskResponse)
+def approve_task(task_id: int, db: Session = Depends(get_db)):
+    task = crud.approve_task(db=db, task_id=task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    audit_data = schemas.AuditLogCreate(
+        project_id=task.project_id,
+        action="task_approved",
+        tool_name="task_approval_system",
+        input_data=f"task_id={task.id}",
+        output_data=f"status={task.status}, approved={task.approved}",
+        status="success",
+    )
+    crud.create_audit_log(db=db, audit_log=audit_data)
+
+    return task
+
+
+@app.patch("/tasks/{task_id}/reject", response_model=schemas.TaskResponse)
+def reject_task(task_id: int, db: Session = Depends(get_db)):
+    task = crud.reject_task(db=db, task_id=task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    audit_data = schemas.AuditLogCreate(
+        project_id=task.project_id,
+        action="task_rejected",
+        tool_name="task_approval_system",
+        input_data=f"task_id={task.id}",
+        output_data=f"status={task.status}, approved={task.approved}",
+        status="success",
+    )
+    crud.create_audit_log(db=db, audit_log=audit_data)
+
+    return task
+
+
+@app.post("/projects/{project_id}/github/issues/create")
+def create_github_issues_for_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.github_repo_owner or not project.github_repo_name:
+        raise HTTPException(
+            status_code=400,
+            detail="GitHub repo is not configured for this project.",
+        )
+
+    approved_tasks = crud.get_approved_tasks_by_project(
+        db=db,
+        project_id=project_id,
+    )
+
+    if not approved_tasks:
+        raise HTTPException(
+            status_code=400,
+            detail="No approved tasks found for this project.",
+        )
+
+    created_issues = []
+
+    for task in approved_tasks:
+        issue_body = f"""
+## Task Description
+
+{task.description or "No description provided."}
+
+## Metadata
+
+- Project ID: {project_id}
+- Task ID: {task.id}
+- Priority: {task.priority}
+- Status: {task.status}
+
+Created by AI Project Manager after human approval.
+"""
+
+        github_result = mcp_github_client.create_github_issue(
+            repo_owner=project.github_repo_owner,
+            repo_name=project.github_repo_name,
+            title=task.title,
+            body=issue_body,
+            labels=["ai-generated", task.priority],
+        )
+
+        issue_record = schemas.GitHubIssueCreate(
+            project_id=project_id,
+            task_id=task.id,
+            issue_number=github_result["issue_number"],
+            issue_url=github_result["issue_url"],
+            title=github_result["title"],
+        )
+
+        saved_issue = crud.create_github_issue_record(
+            db=db,
+            issue=issue_record,
+        )
+
+        created_issues.append(
+            {
+                "task_id": task.id,
+                "issue_number": saved_issue.issue_number,
+                "issue_url": saved_issue.issue_url,
+                "title": saved_issue.title,
+            }
+        )
+
+    mcp_task_client.create_audit_log(
+        project_id=project_id,
+        action="github_issues_created",
+        tool_name="github_mcp_server",
+        input_data=json.dumps(
+            {
+                "approved_task_count": len(approved_tasks),
+                "task_ids": [task.id for task in approved_tasks],
+            }
+        ),
+        output_data=json.dumps(
+            {
+                "issues_created": len(created_issues),
+                "issues": created_issues,
+            }
+        ),
+        status="success",
+    )
+
+    return {
+        "project_id": project_id,
+        "issues_created": len(created_issues),
+        "issues": created_issues,
+    }
+
+
+@app.get(
+    "/projects/{project_id}/github/issues",
+    response_model=list[schemas.GitHubIssueResponse],
+)
+def list_project_github_issues(project_id: int, db: Session = Depends(get_db)):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return crud.get_github_issues_by_project(db=db, project_id=project_id)
+
+
+@app.post("/projects/{project_id}/notifications/slack/draft")
+def draft_project_slack_update(
+    project_id: int,
+    db: Session = Depends(get_db),
+):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    tasks = crud.get_tasks_by_project(db=db, project_id=project_id)
+    approved_tasks = [task for task in tasks if task.approved is True]
+
+    github_issues = crud.get_github_issues_by_project(
+        db=db,
+        project_id=project_id,
+    )
+
+    draft = mcp_notification_client.draft_slack_update(
+        project_name=project.name,
+        tasks_created=len(tasks),
+        approved_tasks=len(approved_tasks),
+        github_issues_created=len(github_issues),
+    )
+
+    mcp_task_client.create_audit_log(
+        project_id=project_id,
+        action="slack_update_drafted",
+        tool_name="notification_mcp_server",
+        input_data=json.dumps(
+            {
+                "project_name": project.name,
+                "tasks_created": len(tasks),
+                "approved_tasks": len(approved_tasks),
+                "github_issues_created": len(github_issues),
+            }
+        ),
+        output_data=json.dumps(draft),
+        status="success",
+    )
+
+    return {
+        "project_id": project_id,
+        "slack_channel_id": project.slack_channel_id,
+        "slack_channel_name": project.slack_channel_name,
+        "draft": draft,
+    }
+
+
+@app.post("/projects/{project_id}/notifications/slack/send")
+def send_project_slack_update(
+    project_id: int,
+    payload: schemas.SlackSendRequest,
+    db: Session = Depends(get_db),
+):
+    project = crud.get_project_by_id(db=db, project_id=project_id)
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not project.slack_channel_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Slack channel is not configured for this project.",
+        )
+
+    result = mcp_notification_client.send_slack_message(
+        channel_id=project.slack_channel_id,
+        message=payload.message,
+    )
+
+    mcp_task_client.create_audit_log(
+        project_id=project_id,
+        action="slack_message_sent",
+        tool_name="notification_mcp_server",
+        input_data=json.dumps(
+            {
+                "channel_id": project.slack_channel_id,
+                "channel_name": project.slack_channel_name,
+                "message": payload.message,
+            }
+        ),
+        output_data=json.dumps(result),
+        status="success",
+    )
+
+    return {
+        "project_id": project_id,
+        "channel_id": project.slack_channel_id,
+        "channel_name": project.slack_channel_name,
+        "result": result,
     }

@@ -1,0 +1,76 @@
+import asyncio
+import json
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+
+class MCPGitHubClient:
+    def __init__(self):
+        self.server_params = StdioServerParameters(
+            command="python",
+            args=["mcp_servers/github_server.py"],
+        )
+
+    async def _call_tool_async(self, tool_name: str, arguments: dict) -> dict:
+        async with stdio_client(self.server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                result = await session.call_tool(tool_name, arguments)
+
+                if hasattr(result, "structured_content") and result.structured_content:
+                    return result.structured_content
+
+                if hasattr(result, "content") and result.content:
+                    content = result.content[0]
+
+                    if hasattr(content, "text") and content.text:
+                        try:
+                            return json.loads(content.text)
+                        except json.JSONDecodeError:
+                            return {"text": content.text}
+
+                return {"success": True}
+
+    def call_tool(self, tool_name: str, arguments: dict) -> dict:
+        return asyncio.run(self._call_tool_async(tool_name, arguments))
+
+    def create_github_issue(
+    self,
+    repo_owner: str,
+    repo_name: str,
+    title: str,
+    body: str,
+    labels: list[str] | None = None,
+    ) -> dict:
+        return self.call_tool(
+            "create_github_issue",
+            {
+                "repo_owner": repo_owner,
+                "repo_name": repo_name,
+                "title": title,
+                "body": body,
+                "labels": labels or [],
+            },
+        )
+
+    def list_repo_issues(self, state: str = "open") -> dict:
+        return self.call_tool(
+            "list_repo_issues",
+            {
+                "state": state,
+            },
+        )
+
+    def comment_on_issue(self, issue_number: int, comment: str) -> dict:
+        return self.call_tool(
+            "comment_on_issue",
+            {
+                "issue_number": issue_number,
+                "comment": comment,
+            },
+        )
+
+
+mcp_github_client = MCPGitHubClient()

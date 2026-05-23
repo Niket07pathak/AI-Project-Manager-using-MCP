@@ -15,6 +15,11 @@ class Project(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    github_repo_owner = Column(String(255), nullable=True)
+    github_repo_name = Column(String(255), nullable=True)
+
+    slack_channel_id = Column(String(255), nullable=True)
+    slack_channel_name = Column(String(255), nullable=True)
 
 
 class Document(Base):
@@ -83,5 +88,18 @@ class AuditLog(Base):
     output_data = Column(Text, nullable=True)
 
     status = Column(String(50), nullable=False, default="success")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class GitHubIssue(Base):
+    __tablename__ = "github_issues"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, nullable=False, index=True)
+    task_id = Column(Integer, nullable=False, index=True)
+
+    issue_number = Column(Integer, nullable=False)
+    issue_url = Column(String(500), nullable=False)
+    title = Column(String(255), nullable=False)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -5,19 +5,25 @@ from pydantic import BaseModel, Field
 class ProjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
-
+    github_repo_owner: str | None = None
+    github_repo_name: str | None = None
+    slack_channel_id: str | None = None
+    slack_channel_name: str | None = None
 
 class ProjectResponse(BaseModel):
     id: int
     name: str
     description: str | None = None
     status: str
+    github_repo_owner: str | None = None
+    github_repo_name: str | None = None
+    slack_channel_id: str | None = None
+    slack_channel_name: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
     class Config:
         from_attributes = True
-
 
 class StatusUpdate(BaseModel):
     status: str = Field(..., min_length=1, max_length=50)
@@ -43,6 +49,7 @@ class DocumentResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class DocumentChunkCreate(BaseModel):
     document_id: int
     project_id: int
@@ -50,6 +57,7 @@ class DocumentChunkCreate(BaseModel):
     content: str = Field(..., min_length=1)
     qdrant_point_id: str | None = None
     token_count: int | None = None
+
 
 class DocumentChunkResponse(BaseModel):
     id: int
@@ -123,6 +131,43 @@ class AuditLogResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ProjectSearchRequest(BaseModel):
     query: str
     top_k: int = 5
+
+
+class ProjectAnalyzeResponse(BaseModel):
+    project_id: int
+    chunks_used: int
+    tasks_created: int
+
+
+class TaskEditUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    priority: str | None = None
+
+
+class GitHubIssueCreate(BaseModel):
+    project_id: int
+    task_id: int
+    issue_number: int
+    issue_url: str
+    title: str
+
+
+class GitHubIssueResponse(BaseModel):
+    id: int
+    project_id: int
+    task_id: int
+    issue_number: int
+    issue_url: str
+    title: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class SlackSendRequest(BaseModel):
+    message: str
