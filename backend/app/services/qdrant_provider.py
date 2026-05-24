@@ -1,4 +1,5 @@
 import os
+import logging
 from uuid import uuid4
 from dotenv import load_dotenv
 
@@ -12,8 +13,10 @@ from qdrant_client.models import (
     MatchValue,
     PayloadSchemaType,
 )
+from backend.app.services.errors import ServiceError
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class QdrantProvider:
@@ -30,22 +33,44 @@ class QdrantProvider:
         self.client = QdrantClient(
             url=self.url,
             api_key=self.api_key,
-            timeout=60,
+            timeout=30,
         )
+        self._collection_ready = False
+
+    def _ensure_ready(self):
+        if self._collection_ready:
+            return
         self.ensure_collection()
+        self._collection_ready = True
 
     def ensure_collection(self):
-        collections = self.client.get_collections().collections
-        existing_names = [collection.name for collection in collections]
+        try:
+            collections = self.client.get_collections().collections
+            existing_names = [collection.name for collection in collections]
+        except Exception as exc:
+            logger.warning("Failed to list Qdrant collections: %s", exc)
+            raise ServiceError(
+                "SERVICE_UNAVAILABLE",
+                "qdrant",
+                "Could not connect to Qdrant collections.",
+            ) from exc
 
         if self.collection_name not in existing_names:
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.vector_size,
-                    distance=Distance.COSINE,
-                ),
-            )
+            try:
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.vector_size,
+                        distance=Distance.COSINE,
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("Failed to create Qdrant collection: %s", exc)
+                raise ServiceError(
+                    "BAD_RESPONSE",
+                    "qdrant",
+                    "Could not create Qdrant collection.",
+                ) from exc
         try:
             self.client.create_payload_index(
                 collection_name=self.collection_name,
@@ -65,6 +90,7 @@ class QdrantProvider:
         content: str,
     ) -> str:
         point_id = str(uuid4())
+        self._ensure_ready()
 
         point = PointStruct(
             id=point_id,
@@ -77,28 +103,45 @@ class QdrantProvider:
                 "content": content,
             },
         )
-        self.client.upsert(
-            collection_name=self.collection_name,
-            points=[point],
-        )
+        try:
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=[point],
+            )
+        except Exception as exc:
+            logger.warning("Qdrant upsert failed for project %s: %s", project_id, exc)
+            raise ServiceError(
+                "BAD_RESPONSE",
+                "qdrant",
+                "Could not store document chunk in Qdrant.",
+            ) from exc
         return point_id
 
     def search_chunks(self, query_embedding: list[float], project_id: int, top_k: int = 5):
-        results = self.client.query_points(
-            collection_name=self.collection_name,
-            query=query_embedding,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(
-                        key="project_id",
-                        match=MatchValue(value=project_id),
-                    )
-                ]
-            ),
-            limit=top_k,
-            with_payload=True,
-            timeout=60,
-        )
+        self._ensure_ready()
+        try:
+            results = self.client.query_points(
+                collection_name=self.collection_name,
+                query=query_embedding,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="project_id",
+                            match=MatchValue(value=project_id),
+                        )
+                    ]
+                ),
+                limit=top_k,
+                with_payload=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            logger.warning("Qdrant search failed for project %s: %s", project_id, exc)
+            raise ServiceError(
+                "BAD_RESPONSE",
+                "qdrant",
+                "Could not search project documents in Qdrant.",
+            ) from exc
 
         return results.points
 

@@ -3,28 +3,69 @@ import requests
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 import json
+import logging
 from typing import Any
+from backend.app.services.errors import error_response
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000")
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 mcp = FastMCP("task-manager-server")
 
 
+def internal_headers() -> dict:
+    if not INTERNAL_API_KEY:
+        raise RuntimeError("INTERNAL_API_KEY is not configured.")
+    return {"X-Internal-API-Key": INTERNAL_API_KEY}
+
+
+def response_json(response: requests.Response, service: str = "task") -> dict:
+    try:
+        return response.json()
+    except ValueError:
+        logger.warning("%s backend returned invalid JSON", service)
+        return error_response(
+            "INVALID_RESPONSE",
+            service,
+            "Backend returned an invalid response.",
+        )
+
+
 @mcp.tool()
-def list_project_tasks(project_id: int) -> dict:
+def list_project_tasks(
+    project_id: int,
+    user_id: str | None = None,
+) -> dict:
     """
     List all tasks for a project.
     """
     url = f"{BACKEND_API_URL}/project/{project_id}/tasks"
 
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.get(
+            url,
+            params={"user_id": user_id},
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP list tasks failed for project %s: %s", project_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not list project tasks.")
+
+    data = response_json(response)
+    if isinstance(data, dict) and data.get("success") is False:
+        return data
 
     return {
         "project_id": project_id,
-        "tasks": response.json(),
+        "tasks": data,
     }
 
 
@@ -34,6 +75,7 @@ def create_task(
     title: str,
     description: str,
     priority: str = "medium",
+    user_id: str | None = None,
 ) -> dict:
     """
     Create a new pending approval task for a project.
@@ -41,6 +83,7 @@ def create_task(
     url = f"{BACKEND_API_URL}/tasks"
 
     payload = {
+        "user_id": user_id,
         "project_id": project_id,
         "title": title,
         "description": description,
@@ -49,10 +92,22 @@ def create_task(
         "approved": False,
     }
 
-    response = requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP create task failed for project %s: %s", project_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not create task.")
 
-    return response.json()
+    return response_json(response)
 
 
 @mcp.tool()
@@ -61,6 +116,7 @@ def edit_task(
     title: str | None = None,
     description: str | None = None,
     priority: str | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """
     Edit an existing task.
@@ -73,41 +129,85 @@ def edit_task(
         "priority": priority,
     }
 
-    response = requests.patch(url, json=payload, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.patch(
+            url,
+            params={"user_id": user_id},
+            json=payload,
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP edit task failed for task %s: %s", task_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not edit task.")
 
-    return response.json()
+    return response_json(response)
 
 
 @mcp.tool()
-def approve_task(task_id: int) -> dict:
+def approve_task(
+    task_id: int,
+    user_id: str | None = None,
+) -> dict:
     """
     Approve a task so it becomes eligible for GitHub issue creation.
     """
     url = f"{BACKEND_API_URL}/tasks/{task_id}/approve"
 
-    response = requests.patch(url, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.patch(
+            url,
+            params={"user_id": user_id},
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP approve task failed for task %s: %s", task_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not approve task.")
 
-    return response.json()
+    return response_json(response)
 
 
 @mcp.tool()
-def reject_task(task_id: int) -> dict:
+def reject_task(
+    task_id: int,
+    user_id: str | None = None,
+) -> dict:
     """
     Reject a generated task.
     """
     url = f"{BACKEND_API_URL}/tasks/{task_id}/reject"
 
-    response = requests.patch(url, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.patch(
+            url,
+            params={"user_id": user_id},
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP reject task failed for task %s: %s", task_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not reject task.")
 
-    return response.json()
+    return response_json(response)
 
 
 @mcp.tool()
 def create_audit_log(
     project_id: int | None,
+    user_id: str,
     action: str,
     tool_name: str | None = None,
     input_data: Any = None,
@@ -120,6 +220,7 @@ def create_audit_log(
     url = f"{BACKEND_API_URL}/audit-logs"
 
     payload = {
+        "user_id": user_id,
         "project_id": project_id,
         "action": action,
         "tool_name": tool_name,
@@ -132,10 +233,22 @@ def create_audit_log(
         "status": status,
     }
 
-    response = requests.post(url, json=payload, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            url,
+            json=payload,
+            headers=internal_headers(),
+            timeout=30,
+        )
+        response.raise_for_status()
+    except RuntimeError as exc:
+        logger.warning("Task MCP internal auth configuration error: %s", exc)
+        return error_response("CONFIGURATION_ERROR", "task", "Internal API key is not configured.")
+    except requests.RequestException as exc:
+        logger.warning("Task MCP create audit log failed for project %s: %s", project_id, exc)
+        return error_response("BAD_RESPONSE", "task", "Could not write audit log.")
 
-    return response.json()
+    return response_json(response)
 
 
 if __name__ == "__main__":

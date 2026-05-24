@@ -1,8 +1,12 @@
 import os
+import logging
 import requests
 from dotenv import load_dotenv
 
+from backend.app.services.errors import ServiceError
+
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class EmbeddingProvider:
     def __init__(self):
@@ -14,15 +18,61 @@ class EmbeddingProvider:
         url = f"{self.api_url}/embed"
         payload = {"text": text}
 
-        response = requests.post(url, json=payload, timeout=600)
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = requests.post(url, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+        except requests.Timeout as exc:
+            logger.warning("Embedding API timed out at %s", url)
+            raise ServiceError(
+                "TIMEOUT",
+                "embedding_api",
+                "Embedding service timed out. Please try again.",
+            ) from exc
+        except requests.ConnectionError as exc:
+            logger.warning("Embedding API unavailable at %s", self.api_url)
+            raise ServiceError(
+                "SERVICE_UNAVAILABLE",
+                "embedding_api",
+                "Embedding service is unavailable. Please start it and try again.",
+            ) from exc
+        except requests.HTTPError as exc:
+            logger.warning("Embedding API returned HTTP error: %s", exc)
+            raise ServiceError(
+                "BAD_RESPONSE",
+                "embedding_api",
+                "Embedding service returned an error.",
+            ) from exc
+        except ValueError as exc:
+            logger.warning("Embedding API returned invalid JSON")
+            raise ServiceError(
+                "INVALID_RESPONSE",
+                "embedding_api",
+                "Embedding service returned an invalid response.",
+            ) from exc
 
-        return data["embedding"]
+        embedding = data.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            logger.warning("Embedding API returned empty or invalid embedding: %s", data)
+            raise ServiceError(
+                "INVALID_RESPONSE",
+                "embedding_api",
+                "Embedding service returned an empty embedding.",
+            )
+
+        return embedding
     def health(self):
         url = f"{self.api_url}/health"
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            logger.warning("Embedding API health check failed: %s", exc)
+            raise ServiceError(
+                "SERVICE_UNAVAILABLE",
+                "embedding_api",
+                "Embedding service health check failed.",
+            ) from exc
     
 embedding_provider = EmbeddingProvider()

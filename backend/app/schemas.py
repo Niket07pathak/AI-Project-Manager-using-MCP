@@ -12,6 +12,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectResponse(BaseModel):
     id: int
+    user_id: str | None = None
     name: str
     description: str | None = None
     status: str
@@ -30,6 +31,7 @@ class StatusUpdate(BaseModel):
 
 
 class DocumentCreate(BaseModel):
+    user_id: str | None = None
     project_id: int
     filename: str = Field(..., min_length=1, max_length=255)
     filetype: str | None = None
@@ -38,6 +40,7 @@ class DocumentCreate(BaseModel):
 
 class DocumentResponse(BaseModel):
     id: int
+    user_id: str | None = None
     project_id: int
     filename: str = Field(..., min_length=1, max_length=255)
     filetype: str | None = None
@@ -51,6 +54,7 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentChunkCreate(BaseModel):
+    user_id: str | None = None
     document_id: int
     project_id: int
     chunk_index: int
@@ -74,6 +78,7 @@ class DocumentChunkResponse(BaseModel):
 
 
 class TaskCreate(BaseModel):
+    user_id: str | None = None
     project_id: int
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
@@ -84,6 +89,7 @@ class TaskCreate(BaseModel):
 
 class TaskResponse(BaseModel):
     id: int
+    user_id: str | None = None
     project_id: int
     title: str
     description: str | None = None
@@ -110,6 +116,7 @@ class TaskPriorityUpdate(BaseModel):
 
 
 class AuditLogCreate(BaseModel):
+    user_id: str | None = None
     project_id: int | None = None
     action: str
     tool_name: str | None = None
@@ -120,6 +127,7 @@ class AuditLogCreate(BaseModel):
 
 class AuditLogResponse(BaseModel):
     id: int
+    user_id: str | None = None
     project_id: int | None
     action: str
     tool_name: str | None
@@ -135,6 +143,7 @@ class AuditLogResponse(BaseModel):
 class ProjectSearchRequest(BaseModel):
     query: str
     top_k: int = 5
+    user_id: str | None = None
 
 
 class ProjectAnalyzeResponse(BaseModel):
@@ -150,6 +159,7 @@ class TaskEditUpdate(BaseModel):
 
 
 class GitHubIssueCreate(BaseModel):
+    user_id: str | None = None
     project_id: int
     task_id: int
     issue_number: int
@@ -159,6 +169,7 @@ class GitHubIssueCreate(BaseModel):
 
 class GitHubIssueResponse(BaseModel):
     id: int
+    user_id: str | None = None
     project_id: int
     task_id: int
     issue_number: int
@@ -171,3 +182,34 @@ class GitHubIssueResponse(BaseModel):
 
 class SlackSendRequest(BaseModel):
     message: str
+
+class WorkflowRunCreate(BaseModel):
+    user_id: str | None = None
+    project_id: int
+    workflow_type: str
+    status: str = "running"
+    input_data: str | None = None
+    output_data: str | None = None
+    error_message: str | None = None
+
+
+class WorkflowRunUpdate(BaseModel):
+    status: str
+    output_data: str | None = None
+    error_message: str | None = None
+
+
+class WorkflowRunResponse(BaseModel):
+    id: int
+    user_id: str | None = None
+    project_id: int
+    workflow_type: str
+    status: str
+    input_data: str | None = None
+    output_data: str | None = None
+    error_message: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True

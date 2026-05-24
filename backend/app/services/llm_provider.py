@@ -1,8 +1,12 @@
 import os
+import logging
 import requests
 from dotenv import load_dotenv
 
+from backend.app.services.errors import ServiceError
+
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider:
@@ -21,11 +25,49 @@ class LLMProvider:
             "options": {"temperature": 0.2, "num_predict": num_predict},
         }
 
-        response = requests.post(url, json=payload, timeout=120)
-        response.raise_for_status()
+        try:
+            response = requests.post(url, json=payload, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+        except requests.Timeout as exc:
+            logger.warning("Ollama request timed out for model %s", self.model)
+            raise ServiceError(
+                "TIMEOUT",
+                "ollama",
+                "Ollama timed out while generating tasks. Please try again.",
+            ) from exc
+        except requests.ConnectionError as exc:
+            logger.warning("Ollama connection failed at %s", self.base_url)
+            raise ServiceError(
+                "SERVICE_UNAVAILABLE",
+                "ollama",
+                "Ollama is unavailable. Please start Ollama and try again.",
+            ) from exc
+        except requests.HTTPError as exc:
+            logger.warning("Ollama returned HTTP error: %s", exc)
+            raise ServiceError(
+                "BAD_RESPONSE",
+                "ollama",
+                "Ollama returned an error while generating tasks.",
+            ) from exc
+        except ValueError as exc:
+            logger.warning("Ollama returned invalid JSON")
+            raise ServiceError(
+                "INVALID_RESPONSE",
+                "ollama",
+                "Ollama returned an invalid response.",
+            ) from exc
 
-        data = response.json()
-        return data.get("response", "")
+        generated = data.get("response")
+        if not isinstance(generated, str):
+            logger.warning("Ollama response missing response field: %s", data)
+            raise ServiceError(
+                "INVALID_RESPONSE",
+                "ollama",
+                "Ollama returned an invalid response.",
+            )
+
+        return generated
 
 
 llm_provider = LLMProvider()
