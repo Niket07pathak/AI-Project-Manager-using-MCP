@@ -41,7 +41,7 @@ Custom MCP Servers
 PostgreSQL + Qdrant + GitHub + Slack
 ```
 
-Architecture diagram placeholder:
+Architecture diagram :
 
 ```mermaid
 flowchart TD
