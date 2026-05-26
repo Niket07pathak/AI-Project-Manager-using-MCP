@@ -279,17 +279,6 @@ docker-compose.yml
 .env.example
 ```
 
-## Security Notes
-
-- Clerk protects authenticated frontend and backend flows.
-- Backend requests use Clerk bearer tokens.
-- Internal MCP server calls use an internal API key.
-- CORS is configured by environment.
-- API docs can be disabled in production.
-- Secrets are excluded through `.gitignore` and `.dockerignore`.
-- Frontend-facing errors avoid exposing stack traces, tokens, or raw service internals.
-- Real secrets belong in local environment files or deployment secret managers.
-
 ## Known Limitations
 
 - Local Ollama must be running and configured correctly.
