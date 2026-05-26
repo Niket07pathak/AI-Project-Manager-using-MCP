@@ -1,9 +1,11 @@
 import os
+import logging
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -44,7 +46,7 @@ def main() -> None:
                 )
             )
 
-    print("Auth user_id columns and indexes are ready.")
+    logger.info("Auth user_id columns and indexes are ready.")
 
 
 if __name__ == "__main__":

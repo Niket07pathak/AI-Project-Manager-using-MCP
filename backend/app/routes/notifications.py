@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from backend.app import crud, schemas
 from backend.app.auth import CurrentUser, get_current_user
 from backend.app.database import get_db
-from backend.app.services.errors import error_message, is_error_response
+from backend.app.services.errors import error_message, is_error_response, public_error_detail
 from backend.app.services.mcp_notification_client import mcp_notification_client
 from backend.app.services.mcp_task_client import mcp_task_client
 
@@ -171,7 +171,7 @@ def send_project_slack_update(
             workflow_run=schemas.WorkflowRunUpdate(
                 status="failed",
                 output_data=None,
-                error_message=str(e),
+                error_message=public_error_detail(e, "Slack notification failed."),
             ),
         )
         if isinstance(e, HTTPException):

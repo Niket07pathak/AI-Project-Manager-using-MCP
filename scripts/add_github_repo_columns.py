@@ -1,8 +1,10 @@
 import os
+import logging
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -27,7 +29,7 @@ def main():
         for query in ALTER_QUERIES:
             conn.execute(text(query))
 
-    print("GitHub repo columns added successfully.")
+    logger.info("GitHub repo columns added successfully.")
 
 if __name__ == "__main__":
     main()

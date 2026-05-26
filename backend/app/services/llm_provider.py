@@ -37,7 +37,7 @@ class LLMProvider:
                 "Ollama timed out while generating tasks. Please try again.",
             ) from exc
         except requests.ConnectionError as exc:
-            logger.warning("Ollama connection failed at %s", self.base_url)
+            logger.warning("Ollama connection failed")
             raise ServiceError(
                 "SERVICE_UNAVAILABLE",
                 "ollama",
@@ -60,7 +60,7 @@ class LLMProvider:
 
         generated = data.get("response")
         if not isinstance(generated, str):
-            logger.warning("Ollama response missing response field: %s", data)
+            logger.warning("Ollama response missing response field")
             raise ServiceError(
                 "INVALID_RESPONSE",
                 "ollama",

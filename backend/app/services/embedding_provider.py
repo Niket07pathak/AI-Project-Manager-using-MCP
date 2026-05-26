@@ -23,14 +23,14 @@ class EmbeddingProvider:
             response.raise_for_status()
             data = response.json()
         except requests.Timeout as exc:
-            logger.warning("Embedding API timed out at %s", url)
+            logger.warning("Embedding API timed out")
             raise ServiceError(
                 "TIMEOUT",
                 "embedding_api",
                 "Embedding service timed out. Please try again.",
             ) from exc
         except requests.ConnectionError as exc:
-            logger.warning("Embedding API unavailable at %s", self.api_url)
+            logger.warning("Embedding API unavailable")
             raise ServiceError(
                 "SERVICE_UNAVAILABLE",
                 "embedding_api",
@@ -53,7 +53,7 @@ class EmbeddingProvider:
 
         embedding = data.get("embedding")
         if not isinstance(embedding, list) or not embedding:
-            logger.warning("Embedding API returned empty or invalid embedding: %s", data)
+            logger.warning("Embedding API returned empty or invalid embedding")
             raise ServiceError(
                 "INVALID_RESPONSE",
                 "embedding_api",

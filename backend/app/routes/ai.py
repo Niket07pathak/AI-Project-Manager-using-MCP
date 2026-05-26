@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 from backend.app import crud, schemas
 from backend.app.agents.project_analyzer import analyze_project_with_langgraph
 from backend.app.auth import CurrentUser, get_current_user
+from backend.app.config import is_development
 from backend.app.database import get_db
 from backend.app.services.embedding_provider import embedding_provider
-from backend.app.services.errors import ServiceError
+from backend.app.services.errors import public_error_detail
 from backend.app.services.llm_provider import llm_provider
 import json
 
@@ -18,9 +19,13 @@ def health_check():
     return {"status": "healthy"}
 
 
-@router.post("/ai/test-generate")
+def require_development_mode():
+    if not is_development():
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+@router.post("/ai/test-generate", dependencies=[Depends(require_development_mode)])
 def test_generate():
-    # TODO: Keep this endpoint dev-only or protect it before production deploys.
     response = llm_provider.generate("Reply with only: Hello from Ollama.")
     return {
         "provider": llm_provider.provider,
@@ -29,15 +34,13 @@ def test_generate():
     }
 
 
-@router.get("/ai/embedding-health")
+@router.get("/ai/embedding-health", dependencies=[Depends(require_development_mode)])
 def embedding_health():
-    # TODO: Keep this endpoint dev-only or protect it before production deploys.
     return embedding_provider.health()
 
 
-@router.post("/ai/test-embed")
+@router.post("/ai/test-embed", dependencies=[Depends(require_development_mode)])
 def test_embed():
-    # TODO: Keep this endpoint dev-only or protect it before production deploys.
     text = "This is a test document for embedding."
     embedding = embedding_provider.embed(text)
     return {
@@ -106,7 +109,10 @@ def analyze_project_endpoint(
             workflow_run=schemas.WorkflowRunUpdate(
                 status="failed",
                 output_data=None,
-                error_message=str(e),
+                error_message=public_error_detail(
+                    e,
+                    "Project analysis failed. Please check dependent services and try again.",
+                ),
             ),
         )
         raise HTTPException(

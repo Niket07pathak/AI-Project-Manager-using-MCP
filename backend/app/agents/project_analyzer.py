@@ -175,9 +175,8 @@ def validate_tasks_node(state: ProjectAnalyzerState) -> ProjectAnalyzerState:
 
     except Exception as e:
         logger.warning(
-            "Invalid LLM JSON for project %s: %s",
+            "Invalid LLM JSON for project %s.",
             state["project_id"],
-            (state["raw_llm_response"] or "")[:1000],
         )
         state["tasks"] = []
         state["error"] = str(e)
@@ -260,7 +259,8 @@ def write_failure_audit_node(state: ProjectAnalyzerState) -> ProjectAnalyzerStat
         output_data=json.dumps(
             {
                 "error": state["error"],
-                "raw_llm_response": state["raw_llm_response"],
+                "raw_llm_response_present": bool(state["raw_llm_response"]),
+                "raw_llm_response_length": len(state["raw_llm_response"] or ""),
             }
         ),
         status="failed",

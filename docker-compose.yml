@@ -9,6 +9,9 @@ services:
     env_file:
       - .env
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       BACKEND_API_URL: http://backend:8000
       EMBEDDING_API_URL: http://embedding_api:8001
       OLLAMA_BASE_URL: http://host.docker.internal:11434

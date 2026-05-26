@@ -1,6 +1,10 @@
 import logging
 from typing import Any
 
+from fastapi import HTTPException
+
+from backend.app.config import expose_error_details
+
 logger = logging.getLogger("ai_project_manager")
 
 
@@ -33,13 +37,14 @@ def error_response(
     message: str,
     details: Any = None,
 ) -> dict:
+    safe_details = details if expose_error_details() else None
     return {
         "success": False,
         "error": {
             "type": error_type,
             "service": service,
             "message": message,
-            "details": details,
+            "details": safe_details,
         },
     }
 
@@ -56,4 +61,12 @@ def error_message(value: Any, fallback: str = "The requested operation failed.")
             return message
     if isinstance(value, dict) and isinstance(value.get("error"), str):
         return value["error"]
+    return fallback
+
+
+def public_error_detail(exc: Exception, fallback: str) -> str:
+    if isinstance(exc, HTTPException) and isinstance(exc.detail, str):
+        return exc.detail
+    if isinstance(exc, ServiceError):
+        return exc.message
     return fallback

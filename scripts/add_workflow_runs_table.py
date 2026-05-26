@@ -1,8 +1,10 @@
 import os
+import logging
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -32,7 +34,7 @@ def main():
     with engine.begin() as conn:
         conn.execute(text(SQL))
 
-    print("workflow_runs table created successfully.")
+    logger.info("workflow_runs table created successfully.")
 
 if __name__ == "__main__":
     main()
