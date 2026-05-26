@@ -35,9 +35,11 @@ export async function apiRequest<T>(
   getToken: GetToken,
 ): Promise<T> {
   const token = await getToken()
+  if (!token) throw new Error('Authentication token is missing.')
+
   const headers = new Headers(options.headers)
 
-  if (token) headers.set('Authorization', `Bearer ${token}`)
+  headers.set('Authorization', `Bearer ${token}`)
   if (options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
@@ -60,24 +62,17 @@ export async function uploadDocument(
   file: File,
   getToken: GetToken,
 ): Promise<Document> {
-  const token = await getToken()
   const formData = new FormData()
   formData.append('file', file)
 
-  const headers = new Headers()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/documents/upload`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  })
-
-  if (!response.ok) {
-    throw new Error(await readError(response))
-  }
-
-  return (await response.json()) as Document
+  return apiRequest<Document>(
+    `/projects/${projectId}/documents/upload`,
+    {
+      method: 'POST',
+      body: formData,
+    },
+    getToken,
+  )
 }
 
 export const api = {

@@ -1,16 +1,22 @@
 import asyncio
 import json
+import os
+import sys
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from backend.app.services.errors import error_response
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 class MCPGitHubClient:
     def __init__(self):
         self.server_params = StdioServerParameters(
-            command="python",
-            args=["mcp_servers/github_server.py"],
+            command=sys.executable,
+            args=[str(PROJECT_ROOT / "mcp_servers" / "github_server.py")],
+            env=os.environ.copy(),
         )
 
     async def _call_tool_async(self, tool_name: str, arguments: dict) -> dict:
